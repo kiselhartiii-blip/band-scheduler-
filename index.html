@@ -1,16 +1,386 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#0f0f0f" />
-    <title>Band Scheduler</title>
-    <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { background: #0f0f0f; }
-    </style>
-  </head>
-  <body>
-    <div id="root"></div>
-  </body>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Band Scheduler</title>
+  <style>* { margin: 0; padding: 0; box-sizing: border-box; } body { background: #0f0f0f; }</style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const SUPABASE_URL = "https://vxzmedsewsyosdcvsntd.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4em1lZHNld3N5b3NkY3ZzbnRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMTQ2OTEsImV4cCI6MjA5NDc5MDY5MX0.aOgq-sGzRBEdfa_vHgMRthFY5BQDooe4uuzlB47Lr38";
+
+const headers = {
+  "Content-Type": "application/json",
+  "apikey": SUPABASE_KEY,
+  "Authorization": `Bearer ${SUPABASE_KEY}`,
+  "Prefer": "return=representation",
+};
+
+async function sbSelect(table, params = "") {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${params}`, { headers });
+  return res.json();
+}
+async function sbUpsert(table, body) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+    method: "POST",
+    headers: { ...headers, "Prefer": "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+async function sbDelete(table, params) {
+  await fetch(`${SUPABASE_URL}/rest/v1/${table}?${params}`, { method: "DELETE", headers });
+}
+
+const BAND_MEMBERS = ["Member 1", "Member 2", "Member 3", "Member 4", "Member 5"];
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const COLORS = [{ bg: "#FF6B6B" }, { bg: "#4ECDC4" }, { bg: "#FFD93D" }, { bg: "#A29BFE" }, { bg: "#6BCB77" }];
+const EVENT_TYPES = [
+  { id: "gig", label: "🎸 Gig", color: "#FF6B6B" },
+  { id: "rehearsal", label: "🥁 Rehearsal", color: "#4ECDC4" },
+  { id: "recording", label: "🎙️ Recording", color: "#FFD93D" },
+  { id: "meeting", label: "📋 Meeting", color: "#A29BFE" },
+  { id: "other", label: "📌 Other", color: "#6BCB77" },
+];
+
+function getDaysInMonth(y, m) { return new Date(y, m + 1, 0).getDate(); }
+function getFirstDay(y, m) { return new Date(y, m, 1).getDay(); }
+
+const navBtn = { background: "none", border: "1px solid #333", color: "#888", borderRadius: 4, padding: "6px 14px", cursor: "pointer", fontFamily: "'Courier New', monospace", fontSize: 16 };
+const inputStyle = { background: "#111", border: "1px solid #333", borderRadius: 4, color: "#fff", fontFamily: "'Courier New', monospace", fontSize: 13, padding: "8px 10px", width: "100%", boxSizing: "border-box", outline: "none" };
+
+function BandCalendar() {
+  const today = new Date();
+  const [month, setMonth] = useState(today.getMonth());
+  const [year, setYear] = useState(today.getFullYear());
+  const [activeMember, setActiveMember] = useState(0);
+  const [availability, setAvailability] = useState({});
+  const [memberNames, setMemberNames] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("bandcal-names")) || BAND_MEMBERS; } catch { return BAND_MEMBERS; }
+  });
+  const [editingName, setEditingName] = useState(null);
+  const [tempName, setTempName] = useState("");
+  const [hoveredDay, setHoveredDay] = useState(null);
+  const [events, setEvents] = useState({});
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [selectedDay, setSelectedDay] = useState(null);
+  const [newEvent, setNewEvent] = useState({ title: "", type: "gig", time: "", notes: "" });
+  const [viewingDay, setViewingDay] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState("");
+
+  const getKey = (day) => `${year}-${month}-${day}`;
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [avRows, evRows] = await Promise.all([
+        sbSelect("availability", "select=day_key,member_index,available"),
+        sbSelect("events", "select=*&order=created_at.asc"),
+      ]);
+      const avMap = {};
+      for (const row of (avRows || [])) {
+        if (!avMap[row.day_key]) avMap[row.day_key] = {};
+        avMap[row.day_key][row.member_index] = row.available;
+      }
+      setAvailability(avMap);
+      const evMap = {};
+      for (const row of (evRows || [])) {
+        if (!evMap[row.day_key]) evMap[row.day_key] = [];
+        evMap[row.day_key].push(row);
+      }
+      setEvents(evMap);
+    } catch (e) {
+      setStatus("⚠️ Could not connect to database");
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { loadData(); }, []);
+  useEffect(() => { try { localStorage.setItem("bandcal-names", JSON.stringify(memberNames)); } catch {} }, [memberNames]);
+
+  const showStatus = (msg) => { setStatus(msg); setTimeout(() => setStatus(""), 2500); };
+
+  const toggleDay = async (day, e) => {
+    e.stopPropagation();
+    const key = getKey(day);
+    const current = (availability[key] || {})[activeMember];
+    const newVal = !current;
+    setAvailability(prev => ({ ...prev, [key]: { ...(prev[key] || {}), [activeMember]: newVal } }));
+    setSaving(true);
+    try {
+      await sbUpsert("availability", { day_key: key, member_index: activeMember, available: newVal });
+      showStatus(newVal ? "✓ Marked available" : "✓ Marked unavailable");
+    } catch {
+      showStatus("⚠️ Save failed — check Supabase RLS settings");
+      setAvailability(prev => ({ ...prev, [key]: { ...(prev[key] || {}), [activeMember]: current } }));
+    }
+    setSaving(false);
+  };
+
+  const addEvent = async () => {
+    if (!newEvent.title.trim()) return;
+    const key = getKey(selectedDay);
+    setSaving(true);
+    try {
+      const result = await sbUpsert("events", { day_key: key, title: newEvent.title.trim(), type: newEvent.type, time: newEvent.time, notes: newEvent.notes });
+      const saved = Array.isArray(result) ? result[0] : result;
+      setEvents(prev => ({ ...prev, [key]: [...(prev[key] || []), saved] }));
+      setNewEvent({ title: "", type: "gig", time: "", notes: "" });
+      setShowEventModal(false);
+      setViewingDay(selectedDay);
+      showStatus("✓ Event added");
+    } catch { showStatus("⚠️ Could not save event"); }
+    setSaving(false);
+  };
+
+  const deleteEvent = async (day, eventId) => {
+    const key = getKey(day);
+    setEvents(prev => ({ ...prev, [key]: (prev[key] || []).filter(e => e.id !== eventId) }));
+    try { await sbDelete("events", `id=eq.${eventId}`); showStatus("✓ Deleted"); }
+    catch { showStatus("⚠️ Delete failed"); loadData(); }
+  };
+
+  const daysInMonth = getDaysInMonth(year, month);
+  const firstDay = getFirstDay(year, month);
+  const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1); } else setMonth(m => m - 1); };
+  const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y + 1); } else setMonth(m => m + 1); };
+  const startEditName = (i) => { setEditingName(i); setTempName(memberNames[i]); };
+  const saveName = (i) => {
+    if (tempName.trim()) setMemberNames(prev => prev.map((n, idx) => idx === i ? tempName.trim() : n));
+    setEditingName(null);
+  };
+  const isToday = (day) => day === today.getDate() && month === today.getMonth() && year === today.getFullYear();
+  const getAvailCount = (day) => Object.values(availability[getKey(day)] || {}).filter(Boolean).length;
+  const getAvailMembers = (day) => memberNames.filter((_, i) => (availability[getKey(day)] || {})[i]);
+  const isActiveAvail = (day) => !!(availability[getKey(day)] || {})[activeMember];
+  const getDayEvents = (day) => events[getKey(day)] || [];
+  const getTypeInfo = (id) => EVENT_TYPES.find(t => t.id === id) || EVENT_TYPES[4];
+
+  const cells = [];
+  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  const upcomingEvents = Object.entries(events)
+    .flatMap(([key, evts]) => evts.map(e => ({ ...e, key })))
+    .filter(e => { const [y, m, d] = e.key.split("-").map(Number); return new Date(y, m, d) >= new Date(today.getFullYear(), today.getMonth(), today.getDate()); })
+    .sort((a, b) => { const [ay,am,ad] = a.key.split("-").map(Number); const [by,bm,bd] = b.key.split("-").map(Number); return new Date(ay,am,ad) - new Date(by,bm,bd); })
+    .slice(0, 5);
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#0f0f0f", fontFamily: "'Courier New', monospace", color: "#f0f0f0", padding: "24px 16px" }}>
+      <div style={{ textAlign: "center", marginBottom: 24 }}>
+        <div style={{ fontSize: 11, letterSpacing: 6, color: "#666", textTransform: "uppercase", marginBottom: 4 }}>Band Scheduler</div>
+        <div style={{ fontSize: 32, fontWeight: 900, letterSpacing: -1, color: "#fff", lineHeight: 1 }}>WHEN CAN WE JAM?</div>
+        <div style={{ marginTop: 8, fontSize: 11, color: saving ? "#FFD93D" : status.startsWith("⚠️") ? "#FF6B6B" : "#4ECDC4", letterSpacing: 1, minHeight: 16 }}>
+          {saving ? "SAVING..." : status}
+        </div>
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign: "center", color: "#555", fontSize: 13, padding: 40 }}>Connecting to database...</div>
+      ) : (
+        <div>
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 10, letterSpacing: 4, color: "#555", marginBottom: 8, textTransform: "uppercase" }}>Who are you?</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {memberNames.map((name, i) => (
+                <div key={i}>
+                  {editingName === i ? (
+                    <input autoFocus value={tempName} onChange={e => setTempName(e.target.value)} onBlur={() => saveName(i)} onKeyDown={e => e.key === "Enter" && saveName(i)}
+                      style={{ ...inputStyle, width: 110, background: COLORS[i].bg, color: "#000", fontWeight: 700, outline: "2px solid #fff" }} />
+                  ) : (
+                    <button onClick={() => setActiveMember(i)} onDoubleClick={() => startEditName(i)}
+                      style={{ background: activeMember === i ? COLORS[i].bg : "#1e1e1e", color: activeMember === i ? "#000" : COLORS[i].bg, border: `2px solid ${COLORS[i].bg}`, borderRadius: 4, padding: "6px 14px", fontFamily: "'Courier New', monospace", fontSize: 13, fontWeight: 700, cursor: "pointer", letterSpacing: 1 }}>
+                      {name}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 10, color: "#444", marginTop: 5 }}>Double-click a name to rename · Changes sync across all devices</div>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <button onClick={prevMonth} style={navBtn}>←</button>
+            <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: 2, color: "#fff" }}>{MONTHS[month]} {year}</div>
+            <button onClick={nextMonth} style={navBtn}>→</button>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 4 }}>
+            {DAYS.map(d => <div key={d} style={{ textAlign: "center", fontSize: 10, color: "#555", letterSpacing: 2, padding: "4px 0", textTransform: "uppercase" }}>{d}</div>)}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
+            {cells.map((day, idx) => {
+              if (!day) return <div key={`e-${idx}`} />;
+              const activeAvail = isActiveAvail(day);
+              const color = COLORS[activeMember];
+              const avMembers = getAvailMembers(day);
+              const hovered = hoveredDay === day;
+              const dayEvts = getDayEvents(day);
+              const count = getAvailCount(day);
+              return (
+                <div key={day} style={{ position: "relative" }}
+                  onMouseEnter={() => setHoveredDay(day)} onMouseLeave={() => setHoveredDay(null)}
+                  onContextMenu={e => { e.preventDefault(); setSelectedDay(day); setShowEventModal(true); setViewingDay(null); }}>
+                  <div onClick={e => toggleDay(day, e)}
+                    style={{ aspectRatio: "1", borderRadius: 6, background: activeAvail ? color.bg : "#1a1a1a", border: isToday(day) ? "2px solid #fff" : activeAvail ? `2px solid ${color.bg}` : "2px solid #2a2a2a", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", transition: "all 0.12s", transform: hovered ? "scale(1.05)" : "scale(1)", position: "relative", overflow: "hidden" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: activeAvail ? "#000" : "#888", lineHeight: 1 }}>{day}</div>
+                    {dayEvts.length > 0 && <div style={{ display: "flex", gap: 2, marginTop: 2, flexWrap: "wrap", justifyContent: "center" }}>{dayEvts.slice(0,3).map((e,i) => <div key={i} style={{ width: 5, height: 5, borderRadius: 1, background: getTypeInfo(e.type).color, opacity: activeAvail ? 0.6 : 1 }} />)}</div>}
+                    {count > 0 && dayEvts.length === 0 && <div style={{ marginTop: 3, display: "flex", gap: 2, flexWrap: "wrap", justifyContent: "center" }}>{Array.from({ length: Math.min(count,5) }).map((_,i) => <div key={i} style={{ width: 4, height: 4, borderRadius: "50%", background: activeAvail ? "rgba(0,0,0,0.35)" : COLORS[i%5].bg }} />)}</div>}
+                    {hovered && <button onClick={e => { e.stopPropagation(); setSelectedDay(day); setShowEventModal(true); setViewingDay(null); }} style={{ position: "absolute", top: 2, right: 2, background: "rgba(255,255,255,0.15)", border: "none", color: activeAvail ? "#000" : "#aaa", borderRadius: 3, width: 14, height: 14, cursor: "pointer", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, fontWeight: 900 }}>+</button>}
+                  </div>
+                  {hovered && (avMembers.length > 0 || dayEvts.length > 0) && (
+                    <div style={{ position: "absolute", bottom: "110%", left: "50%", transform: "translateX(-50%)", background: "#1e1e1e", border: "1px solid #444", borderRadius: 6, padding: "8px 10px", fontSize: 11, color: "#fff", whiteSpace: "nowrap", zIndex: 20, pointerEvents: "none", minWidth: 120 }}>
+                      {dayEvts.length > 0 && <div style={{ marginBottom: avMembers.length > 0 ? 6 : 0 }}>{dayEvts.map((e,i) => <div key={i} style={{ color: getTypeInfo(e.type).color, fontWeight: 700 }}>{getTypeInfo(e.type).label.split(" ")[0]} {e.title}{e.time ? ` · ${e.time}` : ""}</div>)}</div>}
+                      {avMembers.length > 0 && <div><div style={{ fontWeight: 700, color: "#555", letterSpacing: 1, fontSize: 10, marginBottom: 2 }}>FREE ({avMembers.length})</div>{avMembers.map((m,i) => <div key={i} style={{ color: COLORS[memberNames.indexOf(m)].bg }}>{m}</div>)}</div>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {upcomingEvents.length > 0 && (
+            <div style={{ marginTop: 20, padding: 16, background: "#1a1a1a", borderRadius: 8, border: "1px solid #2a2a2a" }}>
+              <div style={{ fontSize: 10, letterSpacing: 3, color: "#555", marginBottom: 10, textTransform: "uppercase" }}>Upcoming Events</div>
+              {upcomingEvents.map((e, i) => {
+                const [y, m, d] = e.key.split("-").map(Number);
+                const typeInfo = getTypeInfo(e.type);
+                return (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, padding: "6px 10px", background: "#222", borderRadius: 6, borderLeft: `3px solid ${typeInfo.color}` }}>
+                    <div style={{ fontSize: 16 }}>{typeInfo.label.split(" ")[0]}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{e.title}</div>
+                      <div style={{ fontSize: 10, color: "#666" }}>{MONTHS[m].slice(0,3)} {d}, {y}{e.time ? ` · ${e.time}` : ""}</div>
+                    </div>
+                    <div style={{ fontSize: 10, color: typeInfo.color, fontWeight: 700, textTransform: "uppercase" }}>{e.type}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div style={{ marginTop: 16, padding: 16, background: "#1a1a1a", borderRadius: 8, border: "1px solid #2a2a2a" }}>
+            <div style={{ fontSize: 10, letterSpacing: 3, color: "#555", marginBottom: 10, textTransform: "uppercase" }}>This month — who's free</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {memberNames.map((name, i) => {
+                const count = Array.from({ length: daysInMonth }, (_, d) => d + 1).filter(d => (availability[getKey(d)] || {})[i]).length;
+                return (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, background: "#222", borderRadius: 4, padding: "4px 10px" }}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: COLORS[i].bg }} />
+                    <span style={{ fontSize: 12, color: "#ccc" }}>{name}</span>
+                    <span style={{ fontSize: 12, color: COLORS[i].bg, fontWeight: 700 }}>{count}d</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "center" }}>
+            <button onClick={loadData} style={{ ...navBtn, fontSize: 11, letterSpacing: 1 }}>↺ REFRESH</button>
+          </div>
+          <div style={{ textAlign: "center", marginTop: 12, fontSize: 10, color: "#333", letterSpacing: 1 }}>
+            CLICK DAY = AVAILABILITY · + OR RIGHT-CLICK = ADD EVENT · SYNCED VIA SUPABASE
+          </div>
+        </div>
+      )}
+
+      {showEventModal && selectedDay && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={() => setShowEventModal(false)}>
+          <div style={{ background: "#1a1a1a", border: "1px solid #333", borderRadius: 10, padding: 24, width: "100%", maxWidth: 360 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 11, letterSpacing: 4, color: "#555", marginBottom: 4, textTransform: "uppercase" }}>Add Event</div>
+            <div style={{ fontSize: 20, fontWeight: 900, color: "#fff", marginBottom: 20 }}>{MONTHS[month]} {selectedDay}, {year}</div>
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 10, color: "#555", letterSpacing: 2, marginBottom: 6, textTransform: "uppercase" }}>Type</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {EVENT_TYPES.map(t => <button key={t.id} onClick={() => setNewEvent(p => ({ ...p, type: t.id }))} style={{ background: newEvent.type === t.id ? t.color : "#222", color: newEvent.type === t.id ? "#000" : t.color, border: `1px solid ${t.color}`, borderRadius: 4, padding: "4px 10px", fontFamily: "'Courier New', monospace", fontSize: 11, cursor: "pointer", fontWeight: 700 }}>{t.label}</button>)}
+              </div>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 10, color: "#555", letterSpacing: 2, marginBottom: 6, textTransform: "uppercase" }}>Title *</div>
+              <input value={newEvent.title} onChange={e => setNewEvent(p => ({ ...p, title: e.target.value }))} placeholder="e.g. The Garage, Studio B..." style={inputStyle} />
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 10, color: "#555", letterSpacing: 2, marginBottom: 6, textTransform: "uppercase" }}>Time (optional)</div>
+              <input value={newEvent.time} onChange={e => setNewEvent(p => ({ ...p, time: e.target.value }))} placeholder="e.g. 8:00 PM" style={inputStyle} />
+            </div>
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 10, color: "#555", letterSpacing: 2, marginBottom: 6, textTransform: "uppercase" }}>Notes (optional)</div>
+              <textarea value={newEvent.notes} onChange={e => setNewEvent(p => ({ ...p, notes: e.target.value }))} placeholder="Address, load-in time, pay..." rows={2} style={{ ...inputStyle, resize: "vertical" }} />
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={addEvent} disabled={saving} style={{ flex: 1, background: getTypeInfo(newEvent.type).color, color: "#000", border: "none", borderRadius: 6, padding: "10px", fontFamily: "'Courier New', monospace", fontSize: 13, fontWeight: 900, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>
+                {saving ? "SAVING..." : "ADD EVENT"}
+              </button>
+              <button onClick={() => setShowEventModal(false)} style={{ background: "#222", color: "#666", border: "1px solid #333", borderRadius: 6, padding: "10px 16px", fontFamily: "'Courier New', monospace", fontSize: 13, cursor: "pointer" }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {viewingDay && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={() => setViewingDay(null)}>
+          <div style={{ background: "#1a1a1a", border: "1px solid #333", borderRadius: 10, padding: 24, width: "100%", maxWidth: 360 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 20, fontWeight: 900, color: "#fff", marginBottom: 4 }}>{MONTHS[month]} {viewingDay}</div>
+            <div style={{ fontSize: 10, color: "#555", letterSpacing: 2, marginBottom: 16 }}>{getAvailMembers(viewingDay).length} AVAILABLE</div>
+            {getDayEvents(viewingDay).length > 0 ? (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 10, color: "#555", letterSpacing: 2, marginBottom: 8, textTransform: "uppercase" }}>Events</div>
+                {getDayEvents(viewingDay).map(e => {
+                  const typeInfo = getTypeInfo(e.type);
+                  return (
+                    <div key={e.id} style={{ background: "#222", borderRadius: 6, padding: "10px 12px", marginBottom: 8, borderLeft: `3px solid ${typeInfo.color}` }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{typeInfo.label.split(" ")[0]} {e.title}</div>
+                          {e.time && <div style={{ fontSize: 11, color: "#666", marginTop: 2 }}>{e.time}</div>}
+                          {e.notes && <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>{e.notes}</div>}
+                        </div>
+                        <button onClick={() => deleteEvent(viewingDay, e.id)} style={{ background: "none", border: "none", color: "#444", cursor: "pointer", fontSize: 16, padding: "0 0 0 8px" }}>×</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : <div style={{ color: "#444", fontSize: 12, marginBottom: 16 }}>No events this day.</div>}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 10, color: "#555", letterSpacing: 2, marginBottom: 8, textTransform: "uppercase" }}>Availability</div>
+              {memberNames.map((name, i) => {
+                const avail = !!(availability[getKey(viewingDay)] || {})[i];
+                return (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: avail ? COLORS[i].bg : "#333" }} />
+                    <span style={{ fontSize: 12, color: avail ? "#fff" : "#444" }}>{name}</span>
+                    <span style={{ fontSize: 10, color: avail ? COLORS[i].bg : "#333", marginLeft: "auto" }}>{avail ? "FREE" : "—"}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => { setSelectedDay(viewingDay); setShowEventModal(true); setViewingDay(null); }} style={{ flex: 1, background: "#222", color: "#aaa", border: "1px solid #333", borderRadius: 6, padding: "8px", fontFamily: "'Courier New', monospace", fontSize: 12, cursor: "pointer" }}>+ Add Event</button>
+              <button onClick={() => setViewingDay(null)} style={{ background: "#222", color: "#666", border: "1px solid #333", borderRadius: 6, padding: "8px 14px", fontFamily: "'Courier New', monospace", fontSize: 12, cursor: "pointer" }}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<BandCalendar />);
+</script>
+</body>
 </html>
