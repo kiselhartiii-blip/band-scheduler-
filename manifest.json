@@ -1,21 +1,16 @@
 {
-  "name": "GroupIE",
-  "short_name": "GroupIE",
-  "description": "Band scheduling app",
+  "name": "OK King Calendar",
+  "short_name": "OK King",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f0f0f",
-  "theme_color": "#0f0f0f",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
   "icons": [
     {
-      "src": "https://via.placeholder.com/192x192/0f0f0f/ffffff?text=GI",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "https://via.placeholder.com/512x512/0f0f0f/ffffff?text=GI",
-      "sizes": "512x512",
-      "type": "image/png"
+      "src": "/plat.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     }
   ]
 }
