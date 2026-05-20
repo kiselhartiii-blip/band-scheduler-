@@ -436,7 +436,20 @@ function BandCalendar({ project, currentMember, onBack }) {
                     <div style={{ fontSize: 13, fontWeight: 700, color: dayStyle.numberColor, lineHeight: 1 }}>{day}</div>
                     {activeState === "unavailable" && <div style={{ fontSize: 9, color: "#FF4444", fontWeight: 900, marginTop: 1, lineHeight: 1 }}>✕</div>}
                     {dayEvts.length > 0 && <div style={{ display: "flex", gap: 2, marginTop: 2, flexWrap: "wrap", justifyContent: "center" }}>{dayEvts.slice(0,3).map((e,i) => <div key={i} style={{ width: 5, height: 5, borderRadius: 1, background: getTypeInfo(e.type).color, opacity: 0.9 }} />)}</div>}
-                    {count > 0 && dayEvts.length === 0 && <div style={{ marginTop: 3, display: "flex", gap: 2, flexWrap: "wrap", justifyContent: "center" }}>{Array.from({ length: Math.min(count,5) }).map((_,i) => <div key={i} style={{ width: 4, height: 4, borderRadius: "50%", background: COLORS[i%5].bg, opacity: 0.8 }} />)}</div>}
+                    {members.some(m => (availability[getKey(day)] || {})[m.id]) && (
+                      <div style={{ marginTop: 3, display: "flex", gap: 2, flexWrap: "wrap", justifyContent: "center", padding: "0 2px" }}>
+                        {members.map((m, i) => {
+                          const state = (availability[getKey(day)] || {})[m.id];
+                          if (!state) return null;
+                          const isAvail = state === "available";
+                          return (
+                            <div key={m.id} style={{ background: isAvail ? "#1a7a1a" : "rgba(60,10,10,0.9)", border: `1px solid ${isAvail ? "#4CAF50" : "#FF4444"}`, borderRadius: 3, padding: "1px 3px", fontSize: 8, fontWeight: 900, color: isAvail ? "#4CAF50" : "#FF4444", lineHeight: 1.4, letterSpacing: 0 }}>
+                              {m.name.slice(0,2).toUpperCase()}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                     {hovered && <button onClick={e => { e.stopPropagation(); setSelectedDay(day); setShowEventModal(true); setViewingDay(null); }} style={{ position: "absolute", top: 2, right: 2, background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", borderRadius: 3, width: 14, height: 14, cursor: "pointer", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, fontWeight: 900 }}>+</button>}
                   </div>
                   {hovered && (avMembers.length > 0 || unavailMembers.length > 0 || dayEvts.length > 0) && (
