@@ -48,6 +48,7 @@ async function sbDelete(table, params) {
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const COLORS = [{ bg: "#FF6B6B" }, { bg: "#4ECDC4" }, { bg: "#FFD93D" }, { bg: "#A29BFE" }, { bg: "#6BCB77" }];
+const PROJECT_COLORS = ["#FF6B6B","#4ECDC4","#FFD93D","#A29BFE","#6BCB77","#FF9F43","#EE5A24","#0652DD","#9980FA","#1289A7"];
 const EVENT_TYPES = [
   { id: "gig", label: "🎸 Gig", color: "#FF6B6B" },
   { id: "rehearsal", label: "🥁 Rehearsal", color: "#4ECDC4" },
@@ -72,16 +73,37 @@ const navBtn = { background: "none", border: "1px solid #333", color: "#888", bo
 function Homepage({ onSelectProject }) {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newDesc, setNewDesc] = useState("");
+  const [newColor, setNewColor] = useState(PROJECT_COLORS[0]);
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
+  const loadProjects = () => {
+    setLoading(true);
     sbSelect("projects", "select=*&order=created_at.asc")
       .then(rows => { setProjects(rows || []); setLoading(false); })
       .catch(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { loadProjects(); }, []);
+
+  const createProject = async () => {
+    if (!newName.trim()) return;
+    setSaving(true);
+    try {
+      const result = await sbUpsert("projects", { name: newName.trim(), description: newDesc.trim(), color: newColor });
+      const saved = Array.isArray(result) ? result[0] : result;
+      setProjects(prev => [...prev, saved]);
+      setShowCreate(false);
+      setNewName(""); setNewDesc(""); setNewColor(PROJECT_COLORS[0]);
+    } catch { alert("Could not create project"); }
+    setSaving(false);
+  };
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div style={{ textAlign: "center", marginBottom: 48 }}>
+      <div style={{ textAlign: "center", marginBottom: 40 }}>
         <div style={{ fontSize: 11, letterSpacing: 6, color: "#666", textTransform: "uppercase", marginBottom: 12 }}>Band Scheduler</div>
         <div style={{ fontSize: 42, fontWeight: 900, color: "#fff", lineHeight: 1, textShadow: "0 2px 20px rgba(0,0,0,0.9)", letterSpacing: -1 }}>YOUR PROJECTS</div>
         <div style={{ fontSize: 12, color: "#444", marginTop: 12, letterSpacing: 2 }}>SELECT A PROJECT TO CONTINUE</div>
@@ -94,7 +116,7 @@ function Homepage({ onSelectProject }) {
           {projects.map((p) => (
             <button key={p.id} onClick={() => onSelectProject(p)}
               style={{ background: "rgba(15,15,15,0.92)", border: `2px solid ${p.color || "#444"}`, borderRadius: 10, padding: "20px 24px", cursor: "pointer", fontFamily: "'Courier New', monospace", textAlign: "left", transition: "all 0.15s" }}
-              onMouseEnter={e => e.currentTarget.style.background = "rgba(30,30,30,0.98)"}
+              onMouseEnter={e => e.currentTarget.style.background = "rgba(40,40,40,0.98)"}
               onMouseLeave={e => e.currentTarget.style.background = "rgba(15,15,15,0.92)"}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <div style={{ width: 14, height: 14, borderRadius: "50%", background: p.color || "#444", flexShrink: 0 }} />
@@ -106,6 +128,47 @@ function Homepage({ onSelectProject }) {
               </div>
             </button>
           ))}
+
+          {/* Create new project */}
+          {!showCreate ? (
+            <button onClick={() => setShowCreate(true)}
+              style={{ background: "rgba(15,15,15,0.6)", border: "2px dashed #333", borderRadius: 10, padding: "18px 24px", cursor: "pointer", fontFamily: "'Courier New', monospace", color: "#555", fontSize: 13, letterSpacing: 2, transition: "all 0.15s" }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = "#666"; e.currentTarget.style.color = "#888"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "#333"; e.currentTarget.style.color = "#555"; }}>
+              + CREATE NEW PROJECT
+            </button>
+          ) : (
+            <div style={{ background: "rgba(15,15,15,0.95)", border: "2px solid #333", borderRadius: 10, padding: "20px 24px" }}>
+              <div style={{ fontSize: 11, letterSpacing: 3, color: "#555", marginBottom: 16, textTransform: "uppercase" }}>New Project</div>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 10, color: "#555", letterSpacing: 2, marginBottom: 6, textTransform: "uppercase" }}>Name *</div>
+                <input autoFocus value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === "Enter" && createProject()} placeholder="e.g. Side Project, Jazz Trio..." style={inputStyle} />
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 10, color: "#555", letterSpacing: 2, marginBottom: 6, textTransform: "uppercase" }}>Description (optional)</div>
+                <input value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="e.g. the band, studio sessions..." style={inputStyle} />
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 10, color: "#555", letterSpacing: 2, marginBottom: 8, textTransform: "uppercase" }}>Color</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {PROJECT_COLORS.map(c => (
+                    <div key={c} onClick={() => setNewColor(c)}
+                      style={{ width: 24, height: 24, borderRadius: "50%", background: c, cursor: "pointer", border: newColor === c ? "3px solid #fff" : "3px solid transparent", boxSizing: "border-box" }} />
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={createProject} disabled={saving}
+                  style={{ flex: 1, background: newColor, color: "#000", border: "none", borderRadius: 6, padding: "10px", fontFamily: "'Courier New', monospace", fontSize: 13, fontWeight: 900, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>
+                  {saving ? "SAVING..." : "CREATE →"}
+                </button>
+                <button onClick={() => setShowCreate(false)}
+                  style={{ background: "#222", color: "#666", border: "1px solid #333", borderRadius: 6, padding: "10px 16px", fontFamily: "'Courier New', monospace", fontSize: 13, cursor: "pointer" }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -113,7 +176,7 @@ function Homepage({ onSelectProject }) {
 }
 
 // ── Profile Setup ─────────────────────────────────────────────────
-function ProfileSetup({ project, onComplete }) {
+function ProfileSetup({ project, onComplete, onBack }) {
   const [name, setName] = useState("");
   const [instrument, setInstrument] = useState("");
   const [saving, setSaving] = useState(false);
@@ -125,7 +188,7 @@ function ProfileSetup({ project, onComplete }) {
     try {
       const result = await sbUpsert("members", { name: name.trim(), instrument: instrument.trim() });
       const saved = Array.isArray(result) ? result[0] : result;
-      localStorage.setItem("bandcal-member-id", saved.id);
+      localStorage.setItem("bandcal-member-id", String(saved.id));
       localStorage.setItem("bandcal-member-name", saved.name);
       localStorage.setItem("bandcal-member-instrument", saved.instrument || "");
       onComplete(saved);
@@ -138,17 +201,15 @@ function ProfileSetup({ project, onComplete }) {
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div style={{ background: "rgba(15,15,15,0.92)", border: `1px solid ${project.color || "#333"}`, borderRadius: 12, padding: 36, width: "100%", maxWidth: 380 }}>
-        <button onClick={() => window.location.reload()} style={{ background: "none", border: "none", color: "#555", cursor: "pointer", fontFamily: "'Courier New', monospace", fontSize: 11, letterSpacing: 2, marginBottom: 24, padding: 0 }}>← BACK</button>
+        <button onClick={onBack} style={{ background: "none", border: "none", color: "#555", cursor: "pointer", fontFamily: "'Courier New', monospace", fontSize: 11, letterSpacing: 2, marginBottom: 24, padding: 0 }}>← BACK</button>
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{ fontSize: 11, letterSpacing: 4, color: project.color || "#666", textTransform: "uppercase", marginBottom: 8 }}>{project.name}</div>
           <div style={{ fontSize: 28, fontWeight: 900, color: "#fff", lineHeight: 1 }}>WHO ARE YOU?</div>
         </div>
-
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 10, color: "#555", letterSpacing: 2, marginBottom: 6, textTransform: "uppercase" }}>Your Name *</div>
           <input autoFocus value={name} onChange={e => { setName(e.target.value); setError(""); }} onKeyDown={e => e.key === "Enter" && submit()} placeholder="e.g. Alex" style={inputStyle} />
         </div>
-
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 10, color: "#555", letterSpacing: 2, marginBottom: 8, textTransform: "uppercase" }}>Instrument</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -160,9 +221,7 @@ function ProfileSetup({ project, onComplete }) {
             ))}
           </div>
         </div>
-
         {error && <div style={{ color: "#FF6B6B", fontSize: 11, marginBottom: 12 }}>{error}</div>}
-
         <button onClick={submit} disabled={saving}
           style={{ width: "100%", background: project.color || "#4ECDC4", color: "#000", border: "none", borderRadius: 6, padding: "12px", fontFamily: "'Courier New', monospace", fontSize: 14, fontWeight: 900, cursor: "pointer", letterSpacing: 2, opacity: saving ? 0.6 : 1 }}>
           {saving ? "SAVING..." : "LET'S JAM →"}
@@ -330,9 +389,9 @@ function BandCalendar({ project, currentMember, onBack }) {
               })}
             </div>
             <div style={{ fontSize: 10, color: "#555", marginTop: 6 }}>
-              Viewing as: <span style={{ color: project.color || "#4ECDC4" }}>{currentMember.name}</span>
+              You are: <span style={{ color: project.color || "#4ECDC4", fontWeight: 700 }}>{currentMember.name}</span>
               {currentMember.instrument && <span style={{ color: "#666" }}> · {currentMember.instrument}</span>}
-              <span onClick={onBack} style={{ color: "#555", marginLeft: 10, cursor: "pointer", textDecoration: "underline" }}>switch project</span>
+              <span onClick={onBack} style={{ color: "#444", marginLeft: 12, cursor: "pointer", textDecoration: "underline" }}>switch project</span>
             </div>
           </div>
 
@@ -418,10 +477,11 @@ function BandCalendar({ project, currentMember, onBack }) {
               {members.map((m, i) => {
                 const freeCount = Array.from({ length: daysInMonth }, (_, d) => d + 1).filter(d => (availability[getKey(d)] || {})[m.id] === "available").length;
                 const busyCount = Array.from({ length: daysInMonth }, (_, d) => d + 1).filter(d => (availability[getKey(d)] || {})[m.id] === "unavailable").length;
+                const isMe = m.id === currentMember.id;
                 return (
-                  <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(34,34,34,0.9)", borderRadius: 4, padding: "4px 10px" }}>
+                  <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 6, background: isMe ? "rgba(50,50,30,0.9)" : "rgba(34,34,34,0.9)", borderRadius: 4, padding: "4px 10px", border: isMe ? `1px solid ${project.color || "#666"}` : "1px solid transparent" }}>
                     <div style={{ width: 8, height: 8, borderRadius: "50%", background: COLORS[i % COLORS.length].bg }} />
-                    <span style={{ fontSize: 12, color: "#ccc" }}>{m.name}</span>
+                    <span style={{ fontSize: 12, color: "#ccc" }}>{m.name}{isMe ? " ★" : ""}</span>
                     {m.instrument && <span style={{ fontSize: 10, color: "#555" }}>{m.instrument}</span>}
                     <span style={{ fontSize: 12, color: "#4CAF50", fontWeight: 700 }}>{freeCount}✓</span>
                     {busyCount > 0 && <span style={{ fontSize: 12, color: "#FF6666", fontWeight: 700 }}>{busyCount}✕</span>}
@@ -527,15 +587,28 @@ function BandCalendar({ project, currentMember, onBack }) {
 
 // ── Root App ──────────────────────────────────────────────────────
 function App() {
-  const [screen, setScreen] = useState("home"); // "home" | "profile" | "calendar"
+  const [screen, setScreen] = useState("home");
   const [selectedProject, setSelectedProject] = useState(null);
   const [currentMember, setCurrentMember] = useState(() => {
-    const id = localStorage.getItem("bandcal-member-id");
-    const name = localStorage.getItem("bandcal-member-name");
-    const instrument = localStorage.getItem("bandcal-member-instrument");
-    if (id && name) return { id: parseInt(id), name, instrument };
+    try {
+      const id = localStorage.getItem("bandcal-member-id");
+      const name = localStorage.getItem("bandcal-member-name");
+      const instrument = localStorage.getItem("bandcal-member-instrument") || "";
+      if (id && name && name !== "undefined") return { id: parseInt(id), name, instrument };
+    } catch {}
     return null;
   });
+
+  // Clear bad localStorage state from old versions
+  useEffect(() => {
+    const name = localStorage.getItem("bandcal-member-name");
+    if (!name || name === "undefined") {
+      localStorage.removeItem("bandcal-member-id");
+      localStorage.removeItem("bandcal-member-name");
+      localStorage.removeItem("bandcal-member-instrument");
+      setCurrentMember(null);
+    }
+  }, []);
 
   const handleSelectProject = (project) => {
     setSelectedProject(project);
@@ -553,7 +626,7 @@ function App() {
   };
 
   if (screen === "home") return <Homepage onSelectProject={handleSelectProject} />;
-  if (screen === "profile") return <ProfileSetup project={selectedProject} onComplete={handleProfileComplete} />;
+  if (screen === "profile") return <ProfileSetup project={selectedProject} onComplete={handleProfileComplete} onBack={handleBack} />;
   return <BandCalendar project={selectedProject} currentMember={currentMember} onBack={handleBack} />;
 }
 
