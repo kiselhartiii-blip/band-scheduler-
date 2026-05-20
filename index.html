@@ -6,58 +6,19 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Band Scheduler</title>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700;900&display=swap" rel="stylesheet">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       background: url('https://images.unsplash.com/photo-1631629571979-1c82e81c7cee?w=1920&q=80') center/cover no-repeat fixed;
-      background-color: #0a0a0a;
-      font-family: 'Space Grotesk', 'Courier New', monospace;
+      background-color: #0f0f0f;
     }
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background: linear-gradient(135deg, rgba(255,107,107,0.08) 0%, rgba(78,205,196,0.06) 50%, rgba(162,155,254,0.08) 100%);
-      pointer-events: none;
-      z-index: 0;
+    /* Mobile tap target sizes */
+    @media (max-width: 480px) {
+      .day-cell:active { transform: scale(0.95) !important; opacity: 0.85; }
     }
-    #root { position: relative; z-index: 1; }
-    @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
-    @keyframes pulse-green { 0%, 100% { box-shadow: 0 0 0 0 rgba(76,175,80,0.5); } 50% { box-shadow: 0 0 0 6px rgba(76,175,80,0); } }
-    @keyframes pulse-red { 0%, 100% { box-shadow: 0 0 0 0 rgba(255,68,68,0.4); } 50% { box-shadow: 0 0 0 6px rgba(255,68,68,0); } }
-    @keyframes shimmer { 0% { background-position: -200% center; } 100% { background-position: 200% center; } }
-    .fade-up { animation: fadeUp 0.4s ease both; }
-    .day-available { animation: pulse-green 2s ease-in-out infinite; }
-    .day-unavailable { animation: pulse-red 2s ease-in-out infinite; }
-    .project-card { transition: transform 0.18s ease, box-shadow 0.18s ease; }
-    .project-card:hover { transform: translateY(-3px) scale(1.01); box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
-    .day-cell { transition: transform 0.12s ease; }
-    .day-cell:hover { transform: scale(1.1) !important; z-index: 5; }
-    .member-btn { transition: transform 0.12s ease, box-shadow 0.12s ease; }
-    .member-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
-    .jam-btn { position: relative; overflow: hidden; transition: transform 0.15s ease, box-shadow 0.15s ease; }
-    .jam-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.4); }
-    .jam-btn::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent); background-size: 200% 100%; animation: shimmer 2.5s linear infinite; }
-    input:focus, textarea:focus { border-color: #4ECDC4 !important; box-shadow: 0 0 0 2px rgba(78,205,196,0.15); }
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
-
-    /* Mobile tap target sizes */
-    @media (max-width: 480px) {
-      .day-cell { border-radius: 6px !important; }
-      .day-cell:hover { transform: none !important; }
-      .member-btn:hover { transform: none !important; box-shadow: none !important; }
-      .project-card:hover { transform: none !important; box-shadow: none !important; }
-    }
-
-    /* Touch-friendly active states instead of hover */
-    @media (hover: none) {
-      .day-cell:active { transform: scale(0.95) !important; opacity: 0.85; }
-      .member-btn:active { opacity: 0.7; }
-      .jam-btn:active { transform: scale(0.97) !important; }
-    }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -166,7 +127,7 @@ function Homepage({ onSelectProject }) {
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px 16px" }}>
       <div style={{ textAlign: "center", marginBottom: 40 }}>
         <div style={{ fontSize: 11, letterSpacing: 6, color: "#666", textTransform: "uppercase", marginBottom: 12 }}>Band Scheduler</div>
-        <div className="fade-up" style={{ fontSize: isMobile ? 36 : 52, fontWeight: 900, color: "#fff", lineHeight: 1, textShadow: "0 0 40px rgba(255,107,107,0.3), 0 2px 20px rgba(0,0,0,0.9)", letterSpacing: -2, background: "linear-gradient(135deg, #fff 40%, #4ECDC4)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>YOUR PROJECTS</div>
+        <div style={{ fontSize: isMobile ? 32 : 42, fontWeight: 900, color: "#fff", lineHeight: 1, textShadow: "0 2px 20px rgba(0,0,0,0.9)", letterSpacing: -1 }}>YOUR PROJECTS</div>
         <div style={{ fontSize: 12, color: "#555", marginTop: 14, letterSpacing: 3, textTransform: "uppercase" }}>Pick a project to get started</div>
       </div>
 
@@ -176,11 +137,11 @@ function Homepage({ onSelectProject }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%", maxWidth: 400 }}>
           {projects.map((p) => (
             <button key={p.id} onClick={() => onSelectProject(p)}
-              className="project-card" style={{ background: "rgba(15,15,15,0.88)", border: `2px solid ${p.color || "#444"}`, borderRadius: 12, padding: "22px 24px", cursor: "pointer", fontFamily: "'Space Grotesk', monospace", textAlign: "left", backdropFilter: "blur(10px)" }}>
+              style={{ background: "rgba(15,15,15,0.88)", border: `2px solid ${p.color || "#444"}`, borderRadius: 12, padding: "22px 24px", cursor: "pointer", fontFamily: "'Courier New', monospace", textAlign: "left", backdropFilter: "blur(10px)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <div style={{ width: 14, height: 14, borderRadius: "50%", background: p.color || "#444", flexShrink: 0 }} />
                 <div>
-                  <div style={{ fontSize: 22, fontWeight: 900, color: "#fff", letterSpacing: 0 }}>{p.name}</div>
+                  <div style={{ fontSize: 20, fontWeight: 900, color: "#fff", letterSpacing: 1 }}>{p.name}</div>
                   {p.description && <div style={{ fontSize: 11, color: "#555", marginTop: 3, letterSpacing: 1 }}>{p.description}</div>}
                 </div>
                 <div style={{ marginLeft: "auto", color: p.color || "#444", fontSize: 20 }}>→</div>
@@ -281,7 +242,7 @@ function ProfileSetup({ project, onComplete, onBack }) {
         <button onClick={step === "new" ? () => setStep("name") : onBack} style={{ background: "none", border: "none", color: "#555", cursor: "pointer", fontFamily: "'Courier New', monospace", fontSize: 11, letterSpacing: 2, marginBottom: 24, padding: 0 }}>← BACK</button>
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{ fontSize: 11, letterSpacing: 4, color: project.color || "#666", textTransform: "uppercase", marginBottom: 8 }}>{project.name}</div>
-          <div className="fade-up" style={{ fontSize: 32, fontWeight: 900, color: "#fff", lineHeight: 1, textShadow: "0 0 20px rgba(78,205,196,0.3)" }}>
+          <div style={{ fontSize: 32, fontWeight: 900, color: "#fff", lineHeight: 1 }}>
             {step === "name" ? "WHO ARE YOU?" : "NEW MEMBER"}
           </div>
           {step === "name" && <div style={{ fontSize: 11, color: "#444", marginTop: 8, letterSpacing: 1 }}>Enter your name to sign in</div>}
@@ -296,8 +257,8 @@ function ProfileSetup({ project, onComplete, onBack }) {
             </div>
             {error && <div style={{ color: "#FF6B6B", fontSize: 11, marginBottom: 12 }}>{error}</div>}
             <button onClick={lookupOrCreate} disabled={saving}
-              className="jam-btn" style={{ width: "100%", background: project.color || "#4ECDC4", color: "#000", border: "none", borderRadius: 8, padding: "14px", fontFamily: "'Space Grotesk', monospace", fontSize: 15, fontWeight: 900, cursor: "pointer", letterSpacing: 2, opacity: saving ? 0.6 : 1 }}>
-              {saving ? "🎸 LOOKING UP..." : "LET'S JAM →"}
+              style={{ width: "100%", background: project.color || "#4ECDC4", color: "#000", border: "none", borderRadius: 8, padding: "14px", fontFamily: "'Courier New', monospace", fontSize: 15, fontWeight: 900, cursor: "pointer", letterSpacing: 2, opacity: saving ? 0.6 : 1 }}>
+              {saving ? "LOOKING UP..." : "LET'S JAM →"}
             </button>
           </>
         )}
@@ -317,8 +278,8 @@ function ProfileSetup({ project, onComplete, onBack }) {
             </div>
             {error && <div style={{ color: "#FF6B6B", fontSize: 11, marginBottom: 12 }}>{error}</div>}
             <button onClick={createMember} disabled={saving}
-              className="jam-btn" style={{ width: "100%", background: project.color || "#4ECDC4", color: "#000", border: "none", borderRadius: 8, padding: "14px", fontFamily: "'Space Grotesk', monospace", fontSize: 15, fontWeight: 900, cursor: "pointer", letterSpacing: 2, opacity: saving ? 0.6 : 1 }}>
-              {saving ? "🎸 SAVING..." : "JOIN THE BAND →"}
+              style={{ width: "100%", background: project.color || "#4ECDC4", color: "#000", border: "none", borderRadius: 8, padding: "14px", fontFamily: "'Courier New', monospace", fontSize: 15, fontWeight: 900, cursor: "pointer", letterSpacing: 2, opacity: saving ? 0.6 : 1 }}>
+              {saving ? "SAVING..." : "JOIN THE BAND →"}
             </button>
           </>
         )}
@@ -460,7 +421,7 @@ function BandCalendar({ project, currentMember, onBack }) {
       <div style={{ textAlign: "center", marginBottom: 24 }}>
         <button onClick={onBack} style={{ background: "none", border: "none", color: "#555", cursor: "pointer", fontFamily: "'Courier New', monospace", fontSize: 11, letterSpacing: 2, marginBottom: 8, display: "block", margin: "0 auto 8px" }}>← ALL PROJECTS</button>
         <div style={{ fontSize: 11, letterSpacing: 6, color: project.color || "#aaa", textTransform: "uppercase", marginBottom: 4 }}>Band Scheduler</div>
-        <div className="fade-up" style={{ fontSize: isMobile ? 24 : 36, fontWeight: 900, letterSpacing: -1, color: "#fff", lineHeight: 1, textShadow: `0 0 30px ${project.color || "#4ECDC4"}55, 0 2px 10px rgba(0,0,0,0.8)`, background: `linear-gradient(135deg, #fff 50%, ${project.color || "#4ECDC4"})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>{project.name.toUpperCase()} CALENDAR</div>
+        <div style={{ fontSize: isMobile ? 22 : 32, fontWeight: 900, letterSpacing: -1, color: "#fff", lineHeight: 1, textShadow: "0 2px 10px rgba(0,0,0,0.8)" }}>{project.name.toUpperCase()} CALENDAR</div>
         <div style={{ marginTop: 8, fontSize: 11, color: saving ? "#FFD93D" : status.startsWith("⚠️") ? "#FF6B6B" : "#4ECDC4", letterSpacing: 1, minHeight: 16 }}>
           {saving ? "SAVING..." : status}
         </div>
@@ -479,7 +440,7 @@ function BandCalendar({ project, currentMember, onBack }) {
                 const isMe = m.id === currentMember.id;
                 return (
                   <button key={m.id} onClick={() => setActiveMemberId(m.id)} className="member-btn"
-                    style={{ background: isActive ? color.bg : "rgba(30,30,30,0.85)", color: isActive ? "#000" : color.bg, border: `2px solid ${color.bg}`, borderRadius: 6, padding: isMobile ? "6px 10px" : "8px 16px", fontFamily: "'Space Grotesk', monospace", fontSize: isMobile ? 12 : 13, fontWeight: 700, cursor: "pointer", letterSpacing: 0.5, boxShadow: isActive ? `0 0 16px ${color.bg}66` : "none" }}>
+                    style={{ background: isActive ? color.bg : "rgba(30,30,30,0.85)", color: isActive ? "#000" : color.bg, border: `2px solid ${color.bg}`, borderRadius: 4, padding: isMobile ? "6px 10px" : "6px 14px", fontFamily: "'Courier New', monospace", fontSize: isMobile ? 12 : 13, fontWeight: 700, cursor: "pointer", letterSpacing: 1 }}>
                     {m.name}{isMe ? " ★" : ""}
                   </button>
                 );
@@ -529,7 +490,7 @@ function BandCalendar({ project, currentMember, onBack }) {
                   onMouseEnter={() => setHoveredDay(day)} onMouseLeave={() => setHoveredDay(null)}
                   onContextMenu={e => { e.preventDefault(); setSelectedDay(day); setShowEventModal(true); setViewingDay(null); }}>
                   <div onClick={e => isMobile ? (setViewingDay(day)) : toggleDay(day, e)}
-                    className={"day-cell" + (activeState === "available" ? " day-available" : activeState === "unavailable" ? " day-unavailable" : "")} style={{ aspectRatio: "1", borderRadius: 8, background: dayStyle.background, border: dayStyle.border, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" }}>
+                    style={{ aspectRatio: "1", borderRadius: 8, background: dayStyle.background, border: dayStyle.border, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" }}>
                     <div style={{ fontSize: isMobile ? 11 : 13, fontWeight: 700, color: dayStyle.numberColor, lineHeight: 1 }}>{day}</div>
                     {activeState === "unavailable" && <div style={{ fontSize: 9, color: "#FF4444", fontWeight: 900, marginTop: 1, lineHeight: 1 }}>✕</div>}
                     {dayEvts.length > 0 && <div style={{ display: "flex", gap: 2, marginTop: 2, flexWrap: "wrap", justifyContent: "center" }}>{dayEvts.slice(0,3).map((e,i) => <div key={i} style={{ width: 5, height: 5, borderRadius: 1, background: getTypeInfo(e.type).color, opacity: 0.9 }} />)}</div>}
