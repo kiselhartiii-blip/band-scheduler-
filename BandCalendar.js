@@ -40,6 +40,13 @@ const EVENT_TYPES = [
   { id: "other", label: "📌 Other", color: "#6BCB77" },
 ];
 
+// Cycle: null → "available" → "unavailable" → null
+function nextAvailState(current) {
+  if (!current) return "available";
+  if (current === "available") return "unavailable";
+  return null; // back to blank
+}
+
 function getDaysInMonth(y, m) { return new Date(y, m + 1, 0).getDate(); }
 function getFirstDay(y, m) { return new Date(y, m, 1).getDay(); }
 
@@ -79,7 +86,12 @@ export default function BandCalendar() {
       const avMap = {};
       for (const row of (avRows || [])) {
         if (!avMap[row.day_key]) avMap[row.day_key] = {};
-        avMap[row.day_key][row.member_index] = row.available;
+        // Support both old boolean format and new string format
+        if (typeof row.available === "boolean") {
+          avMap[row.day_key][row.member_index] = row.available ? "available" : null;
+        } else {
+          avMap[row.day_key][row.member_index] = row.available;
+        }
       }
       setAvailability(avMap);
       const evMap = {};
@@ -105,13 +117,20 @@ export default function BandCalendar() {
   const toggleDay = async (day, e) => {
     e.stopPropagation();
     const key = getKey(day);
-    const current = (availability[key] || {})[activeMember];
-    const newVal = !current;
+    const current = (availability[key] || {})[activeMember] || null;
+    const newVal = nextAvailState(current);
+
     setAvailability(prev => ({ ...prev, [key]: { ...(prev[key] || {}), [activeMember]: newVal } }));
     setSaving(true);
     try {
-      await sbUpsert("availability", { day_key: key, member_index: activeMember, available: newVal });
-      showStatus(newVal ? "✓ Marked available" : "✓ Marked unavailable");
+      if (newVal === null) {
+        // Remove the row entirely
+        await sbDelete("availability", `day_key=eq.${key}&member_index=eq.${activeMember}`);
+        showStatus("✓ Cleared");
+      } else {
+        await sbUpsert("availability", { day_key: key, member_index: activeMember, available: newVal });
+        showStatus(newVal === "available" ? "✓ Marked available" : "✓ Marked not available");
+      }
     } catch {
       showStatus("⚠️ Save failed — check Supabase RLS settings");
       setAvailability(prev => ({ ...prev, [key]: { ...(prev[key] || {}), [activeMember]: current } }));
@@ -152,11 +171,29 @@ export default function BandCalendar() {
     setEditingName(null);
   };
   const isToday = (day) => day === today.getDate() && month === today.getMonth() && year === today.getFullYear();
-  const getAvailCount = (day) => Object.values(availability[getKey(day)] || {}).filter(Boolean).length;
-  const getAvailMembers = (day) => memberNames.filter((_, i) => (availability[getKey(day)] || {})[i]);
-  const isActiveAvail = (day) => !!(availability[getKey(day)] || {})[activeMember];
+
+  // Only count "available" members (not unavailable)
+  const getAvailCount = (day) => Object.values(availability[getKey(day)] || {}).filter(v => v === "available").length;
+  const getUnavailCount = (day) => Object.values(availability[getKey(day)] || {}).filter(v => v === "unavailable").length;
+  const getAvailMembers = (day) => memberNames.filter((_, i) => (availability[getKey(day)] || {})[i] === "available");
+  const getUnavailMembers = (day) => memberNames.filter((_, i) => (availability[getKey(day)] || {})[i] === "unavailable");
+
+  const getActiveState = (day) => (availability[getKey(day)] || {})[activeMember] || null;
   const getDayEvents = (day) => events[getKey(day)] || [];
   const getTypeInfo = (id) => EVENT_TYPES.find(t => t.id === id) || EVENT_TYPES[4];
+
+  // Day cell background/border based on active member's state
+  const getDayStyle = (day) => {
+    const state = getActiveState(day);
+    const color = COLORS[activeMember];
+    if (state === "available") {
+      return { background: color.bg, border: `2px solid ${color.bg}`, numberColor: "#000" };
+    }
+    if (state === "unavailable") {
+      return { background: "#2a1010", border: "2px solid #FF4444", numberColor: "#FF4444" };
+    }
+    return { background: "#1a1a1a", border: isToday(day) ? "2px solid #fff" : "2px solid #2a2a2a", numberColor: "#888" };
+  };
 
   const cells = [];
   for (let i = 0; i < firstDay; i++) cells.push(null);
@@ -202,6 +239,22 @@ export default function BandCalendar() {
             <div style={{ fontSize: 10, color: "#444", marginTop: 5 }}>Double-click a name to rename · Changes sync across all devices</div>
           </div>
 
+          {/* Legend */}
+          <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, color: "#666", letterSpacing: 1 }}>
+              <div style={{ width: 12, height: 12, borderRadius: 3, background: COLORS[activeMember].bg }} />
+              AVAILABLE
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, color: "#666", letterSpacing: 1 }}>
+              <div style={{ width: 12, height: 12, borderRadius: 3, background: "#2a1010", border: "1px solid #FF4444" }} />
+              NOT AVAILABLE
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, color: "#666", letterSpacing: 1 }}>
+              <div style={{ width: 12, height: 12, borderRadius: 3, background: "#1a1a1a", border: "1px solid #2a2a2a" }} />
+              NO INPUT
+            </div>
+          </div>
+
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
             <button onClick={prevMonth} style={navBtn}>←</button>
             <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: 2, color: "#fff" }}>{MONTHS[month]} {year}</div>
@@ -215,9 +268,10 @@ export default function BandCalendar() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
             {cells.map((day, idx) => {
               if (!day) return <div key={`e-${idx}`} />;
-              const activeAvail = isActiveAvail(day);
-              const color = COLORS[activeMember];
+              const dayStyle = getDayStyle(day);
+              const activeState = getActiveState(day);
               const avMembers = getAvailMembers(day);
+              const unavailMembers = getUnavailMembers(day);
               const hovered = hoveredDay === day;
               const dayEvts = getDayEvents(day);
               const count = getAvailCount(day);
@@ -226,16 +280,31 @@ export default function BandCalendar() {
                   onMouseEnter={() => setHoveredDay(day)} onMouseLeave={() => setHoveredDay(null)}
                   onContextMenu={e => { e.preventDefault(); setSelectedDay(day); setShowEventModal(true); setViewingDay(null); }}>
                   <div onClick={e => toggleDay(day, e)}
-                    style={{ aspectRatio: "1", borderRadius: 6, background: activeAvail ? color.bg : "#1a1a1a", border: isToday(day) ? "2px solid #fff" : activeAvail ? `2px solid ${color.bg}` : "2px solid #2a2a2a", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", transition: "all 0.12s", transform: hovered ? "scale(1.05)" : "scale(1)", position: "relative", overflow: "hidden" }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: activeAvail ? "#000" : "#888", lineHeight: 1 }}>{day}</div>
-                    {dayEvts.length > 0 && <div style={{ display: "flex", gap: 2, marginTop: 2, flexWrap: "wrap", justifyContent: "center", padding: "0 2px" }}>{dayEvts.slice(0,3).map((e,i) => <div key={i} style={{ width: 5, height: 5, borderRadius: 1, background: getTypeInfo(e.type).color, opacity: activeAvail ? 0.6 : 1 }} />)}</div>}
-                    {count > 0 && dayEvts.length === 0 && <div style={{ marginTop: 3, display: "flex", gap: 2, flexWrap: "wrap", justifyContent: "center" }}>{Array.from({ length: Math.min(count,5) }).map((_,i) => <div key={i} style={{ width: 4, height: 4, borderRadius: "50%", background: activeAvail ? "rgba(0,0,0,0.35)" : COLORS[i%5].bg }} />)}</div>}
-                    {hovered && <button onClick={e => { e.stopPropagation(); setSelectedDay(day); setShowEventModal(true); setViewingDay(null); }} style={{ position: "absolute", top: 2, right: 2, background: "rgba(255,255,255,0.15)", border: "none", color: activeAvail ? "#000" : "#aaa", borderRadius: 3, width: 14, height: 14, cursor: "pointer", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, fontWeight: 900 }}>+</button>}
+                    style={{ aspectRatio: "1", borderRadius: 6, background: dayStyle.background, border: dayStyle.border, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", transition: "all 0.12s", transform: hovered ? "scale(1.05)" : "scale(1)", position: "relative", overflow: "hidden" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: dayStyle.numberColor, lineHeight: 1 }}>{day}</div>
+                    {/* Show X icon for unavailable state */}
+                    {activeState === "unavailable" && (
+                      <div style={{ fontSize: 9, color: "#FF4444", fontWeight: 900, marginTop: 1, lineHeight: 1 }}>✕</div>
+                    )}
+                    {dayEvts.length > 0 && <div style={{ display: "flex", gap: 2, marginTop: 2, flexWrap: "wrap", justifyContent: "center", padding: "0 2px" }}>{dayEvts.slice(0,3).map((e,i) => <div key={i} style={{ width: 5, height: 5, borderRadius: 1, background: getTypeInfo(e.type).color, opacity: activeState === "available" ? 0.6 : 1 }} />)}</div>}
+                    {count > 0 && dayEvts.length === 0 && <div style={{ marginTop: 3, display: "flex", gap: 2, flexWrap: "wrap", justifyContent: "center" }}>{Array.from({ length: Math.min(count,5) }).map((_,i) => <div key={i} style={{ width: 4, height: 4, borderRadius: "50%", background: activeState === "available" ? "rgba(0,0,0,0.35)" : COLORS[i%5].bg }} />)}</div>}
+                    {hovered && <button onClick={e => { e.stopPropagation(); setSelectedDay(day); setShowEventModal(true); setViewingDay(null); }} style={{ position: "absolute", top: 2, right: 2, background: "rgba(255,255,255,0.15)", border: "none", color: activeState === "available" ? "#000" : "#aaa", borderRadius: 3, width: 14, height: 14, cursor: "pointer", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, fontWeight: 900 }}>+</button>}
                   </div>
-                  {hovered && (avMembers.length > 0 || dayEvts.length > 0) && (
+                  {hovered && (avMembers.length > 0 || unavailMembers.length > 0 || dayEvts.length > 0) && (
                     <div style={{ position: "absolute", bottom: "110%", left: "50%", transform: "translateX(-50%)", background: "#1e1e1e", border: "1px solid #444", borderRadius: 6, padding: "8px 10px", fontSize: 11, color: "#fff", whiteSpace: "nowrap", zIndex: 20, pointerEvents: "none", minWidth: 120 }}>
-                      {dayEvts.length > 0 && <div style={{ marginBottom: avMembers.length > 0 ? 6 : 0 }}>{dayEvts.map((e,i) => <div key={i} style={{ color: getTypeInfo(e.type).color, fontWeight: 700 }}>{getTypeInfo(e.type).label.split(" ")[0]} {e.title}{e.time ? ` · ${e.time}` : ""}</div>)}</div>}
-                      {avMembers.length > 0 && <><div style={{ fontWeight: 700, color: "#555", letterSpacing: 1, fontSize: 10, marginBottom: 2 }}>FREE ({avMembers.length})</div>{avMembers.map((m,i) => <div key={i} style={{ color: COLORS[memberNames.indexOf(m)].bg }}>{m}</div>)}</>}
+                      {dayEvts.length > 0 && <div style={{ marginBottom: (avMembers.length > 0 || unavailMembers.length > 0) ? 6 : 0 }}>{dayEvts.map((e,i) => <div key={i} style={{ color: getTypeInfo(e.type).color, fontWeight: 700 }}>{getTypeInfo(e.type).label.split(" ")[0]} {e.title}{e.time ? ` · ${e.time}` : ""}</div>)}</div>}
+                      {avMembers.length > 0 && (
+                        <>
+                          <div style={{ fontWeight: 700, color: "#555", letterSpacing: 1, fontSize: 10, marginBottom: 2 }}>FREE ({avMembers.length})</div>
+                          {avMembers.map((m,i) => <div key={i} style={{ color: COLORS[memberNames.indexOf(m)].bg }}>{m}</div>)}
+                        </>
+                      )}
+                      {unavailMembers.length > 0 && (
+                        <div style={{ marginTop: avMembers.length > 0 ? 4 : 0 }}>
+                          <div style={{ fontWeight: 700, color: "#555", letterSpacing: 1, fontSize: 10, marginBottom: 2 }}>BUSY ({unavailMembers.length})</div>
+                          {unavailMembers.map((m,i) => <div key={i} style={{ color: "#FF6666" }}>{m}</div>)}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -267,12 +336,14 @@ export default function BandCalendar() {
             <div style={{ fontSize: 10, letterSpacing: 3, color: "#555", marginBottom: 10, textTransform: "uppercase" }}>This month — who's free</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {memberNames.map((name, i) => {
-                const count = Array.from({ length: daysInMonth }, (_, d) => d + 1).filter(d => (availability[getKey(d)] || {})[i]).length;
+                const freeCount = Array.from({ length: daysInMonth }, (_, d) => d + 1).filter(d => (availability[getKey(d)] || {})[i] === "available").length;
+                const busyCount = Array.from({ length: daysInMonth }, (_, d) => d + 1).filter(d => (availability[getKey(d)] || {})[i] === "unavailable").length;
                 return (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, background: "#222", borderRadius: 4, padding: "4px 10px" }}>
                     <div style={{ width: 8, height: 8, borderRadius: "50%", background: COLORS[i].bg }} />
                     <span style={{ fontSize: 12, color: "#ccc" }}>{name}</span>
-                    <span style={{ fontSize: 12, color: COLORS[i].bg, fontWeight: 700 }}>{count}d</span>
+                    <span style={{ fontSize: 12, color: COLORS[i].bg, fontWeight: 700 }}>{freeCount}✓</span>
+                    {busyCount > 0 && <span style={{ fontSize: 12, color: "#FF6666", fontWeight: 700 }}>{busyCount}✕</span>}
                   </div>
                 );
               })}
@@ -283,7 +354,7 @@ export default function BandCalendar() {
             <button onClick={loadData} style={{ ...navBtn, fontSize: 11, letterSpacing: 1 }}>↺ REFRESH</button>
           </div>
           <div style={{ textAlign: "center", marginTop: 12, fontSize: 10, color: "#333", letterSpacing: 1 }}>
-            CLICK DAY = AVAILABILITY · + OR RIGHT-CLICK = ADD EVENT · SYNCED VIA SUPABASE
+            CLICK DAY = CYCLE STATUS (FREE → BUSY → CLEAR) · + OR RIGHT-CLICK = ADD EVENT · SYNCED VIA SUPABASE
           </div>
         </>
       )}
@@ -325,7 +396,7 @@ export default function BandCalendar() {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={() => setViewingDay(null)}>
           <div style={{ background: "#1a1a1a", border: "1px solid #333", borderRadius: 10, padding: 24, width: "100%", maxWidth: 360 }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 20, fontWeight: 900, color: "#fff", marginBottom: 4 }}>{MONTHS[month]} {viewingDay}</div>
-            <div style={{ fontSize: 10, color: "#555", letterSpacing: 2, marginBottom: 16 }}>{getAvailMembers(viewingDay).length} AVAILABLE</div>
+            <div style={{ fontSize: 10, color: "#555", letterSpacing: 2, marginBottom: 16 }}>{getAvailCount(viewingDay)} AVAILABLE · {getUnavailCount(viewingDay)} BUSY</div>
             {getDayEvents(viewingDay).length > 0 ? (
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 10, color: "#555", letterSpacing: 2, marginBottom: 8, textTransform: "uppercase" }}>Events</div>
@@ -349,12 +420,16 @@ export default function BandCalendar() {
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 10, color: "#555", letterSpacing: 2, marginBottom: 8, textTransform: "uppercase" }}>Availability</div>
               {memberNames.map((name, i) => {
-                const avail = !!(availability[getKey(viewingDay)] || {})[i];
+                const state = (availability[getKey(viewingDay)] || {})[i] || null;
+                const isAvail = state === "available";
+                const isUnavail = state === "unavailable";
                 return (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: avail ? COLORS[i].bg : "#333" }} />
-                    <span style={{ fontSize: 12, color: avail ? "#fff" : "#444" }}>{name}</span>
-                    <span style={{ fontSize: 10, color: avail ? COLORS[i].bg : "#333", marginLeft: "auto" }}>{avail ? "FREE" : "—"}</span>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: isAvail ? COLORS[i].bg : isUnavail ? "#FF4444" : "#333" }} />
+                    <span style={{ fontSize: 12, color: isAvail ? "#fff" : isUnavail ? "#FF6666" : "#444" }}>{name}</span>
+                    <span style={{ fontSize: 10, color: isAvail ? COLORS[i].bg : isUnavail ? "#FF4444" : "#333", marginLeft: "auto" }}>
+                      {isAvail ? "FREE" : isUnavail ? "BUSY" : "—"}
+                    </span>
                   </div>
                 );
               })}
